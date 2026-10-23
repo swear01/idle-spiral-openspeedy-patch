@@ -1,12 +1,12 @@
 # Idle Spiral OpenSpeedy runtime patch
 
-Version 2 runtime patch with Steam autoload for Idle Spiral 3.0.82 build 117 (Unity/Mono x64), tested with OpenSpeedy 3.3.8. It replaces elapsed admission and the simulation loop inside `GameSystem.Update` with Harmony 2.4.3. Original game binaries remain unchanged.
+Version 2 bounded runtime plus an adaptive budget guard and Steam autoload for Idle Spiral 3.0.82 build 117 (Unity/Mono x64), tested with OpenSpeedy 3.3.8. It replaces elapsed admission and the simulation loop inside `GameSystem.Update` with Harmony 2.4.3. Original game binaries remain unchanged.
 
 ## Behavior
 
-When OpenSpeedy is enabled above 1×, the normal four-step frame budget becomes `ceil(4 * speed)` (80 at 20×), capped at 128. The loop checks independent real time between simulation steps and yields once eight milliseconds have elapsed. It drains each 0.02-second step immediately before executing it, so unexecuted steps remain queued without consuming Offline Boost. Production, battles and boost admission still execute through the existing game methods; admitted-delta properties reflect executed steps.
+When OpenSpeedy is enabled above 1×, the normal four-step frame budget becomes `ceil(4 * speed)` (80 at 20×), capped at 128. The loop checks independent real time between simulation steps. Its baseline budget is eight milliseconds; AdaptiveGuard adjusts this within 8–16 milliseconds according to queued work and observed time outside simulation. It drains each 0.02-second step immediately before executing it, so unexecuted steps remain queued without consuming Offline Boost. Production, battles and boost admission still execute through the existing game methods; admitted-delta properties reflect executed steps.
 
-Queued simulation time is capped at `min(40, 2 * speed)` seconds. Sustained excess is returned to the existing offline-gap path, preventing unlimited catch-up debt. Under overload this deliberately sacrifices the requested effective multiplier in favor of responsiveness. Eight milliseconds is a cooperative boundary: a single expensive step, GC pause, rendering or other game code can exceed it and cannot be preempted by this patch.
+Queued simulation time is capped at `min(40, 2 * speed)` seconds. Sustained excess is returned to the existing offline-gap path, preventing unlimited catch-up debt. Under overload this deliberately sacrifices the requested effective multiplier in favor of responsiveness. The selected budget is a cooperative boundary: a single expensive step, GC pause, rendering or other game code can exceed it and cannot be preempted by this patch.
 
 The timer uses `QueryUnbiasedInterruptTimePrecise` from KernelBase.dll, whose export was verified locally. OpenSpeedy 3.3.8 hooks QPC/tick/system clocks but does not hook this API. A deterministic 10,000-frame overload test verifies bounded backlog and conservation of simulated, offline and queued time.
 
@@ -29,6 +29,10 @@ Restarting clears the in-memory patch, then autoload reapplies it. Keep OpenSpee
 
 `patch-status.txt` records version, state, factor, step budget, admitted seconds, backlog, real simulation milliseconds, yielded frames and overflow routed offline. Measure rates with an external monotonic observer. `patch-error.txt`, if created, contains loader/managed errors.
 
+AdaptiveGuard preserves the distributed v2 runtime byte for byte and checks its SHA-256 before patching one 80000-tick constant in RunFrame. A separate Harmony owner observes RunSimulationFrame and selects the budget. Under queue pressure the requested budget rises by 0.25 ms per frame to 16 ms; low pressure reduces it by 0.125 ms toward 8 ms. An exponential average of outside work limits the selection against a soft 40 ms frame target, retaining the original 8 ms baseline when outside work is already heavy. This is not a frame-rate guarantee. Removing AdaptiveGuard restores the original fixed budget without removing authentication, calendar or simulation fixes.
+
+`adaptive-status.txt` is authoritative for the selected budget and adds independent real time, simulation/game seconds, process ID and outside-work timing. The unchanged v2 `patch-status.txt` still prints its baseline `frameBudgetMilliseconds=8`; its actual duration and backlog counters remain valid. AutoInstall now enters AdaptiveGuard, delegates to AuthGuard → CalendarGuard → the original simulation/OpenSpeedy loader, then installs the adaptive layer. No speed setter, frame-rate setting, battle mode or reward logic is changed. A new full Steam restart remains pending; isolated autoload and native bootstrap components are tested.
+
 A full 20× still requires enough CPU time to execute 1000 simulation steps per real second. The patch preserves time, but cannot guarantee every future scene will sustain that throughput. Network/server-controlled systems and independent UI schedules are outside this patch.
 
 ## Verification
@@ -37,7 +41,7 @@ The calendar guard rewrites the 53 methods in the four hash-checked game assembl
 
 The four calendar assemblies are Assembly-CSharp, IdleSpiralDomain, IdleLibrary and IdleSpiral.CloudSave. The latter two cover backup/envelope timestamps and additional DateTimeOffset season deadlines. GetSystemTime returns UTC according to [Microsoft's API documentation](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsystemtime).
 
-BeginAutomaticSave is separately gated to at least 15 real seconds per save controller, matching the game's intended automatic-save interval. Its original save preparation, atomic write, completion and failure handling remain intact. Manual, pause, focus-loss and quit saves bypass this additional gate. The original accelerated coroutine can still poll the gate. The Steam bootstrap targets AuthGuard, which installs CalendarGuard and the authentication guard before delegating to the unchanged simulation autoloader. Use Install-SteamAutoload.ps1 -Action Upgrade for an existing owned installation; ownership and hashes are checked before atomically replacing changed payload files. Unsupported or modified installations fail without overwriting unrelated files.
+BeginAutomaticSave is separately gated to at least 15 real seconds per save controller, matching the game's intended automatic-save interval. Its original save preparation, atomic write, completion and failure handling remain intact. Manual, pause, focus-loss and quit saves bypass this additional gate. The original accelerated coroutine can still poll the gate. Use Install-SteamAutoload.ps1 -Action Upgrade for an existing owned installation; ownership and hashes are checked before atomically replacing changed payload files. Unsupported or modified installations fail without overwriting unrelated files.
 
 AuthGuard covers four methods in two additional hash-checked assemblies, IdleSystem.Auth and IdleSystem.CloudSave. Five UTC clock reads use real UTC. Two token-expiry reads use the earlier of the SDK's cached expiry and the ID token's JWT exp value. A live failure had an already expired JWT but a cached expiry in the future, so the original SDK skipped refresh and cloud inspection received 403. This guard only decides when to request the original SDK refresh; decoding exp does not verify identity or signature, and server validation remains unchanged. Missing or malformed expiry requests refresh. The original five-minute margin remains intact. Firebase documents [ID token expiry](https://firebase.google.com/docs/auth/admin/verify-id-tokens) and [session refresh](https://firebase.google.com/docs/auth/admin/manage-sessions).
 
@@ -62,9 +66,12 @@ dotnet build .\MonoHost\MonoHost.csproj -c Release
 dotnet build .\Bootstrap\Bootstrap.csproj -c Release
 dotnet build .\Clock\Clock.csproj -c Release
 dotnet build .\Auth\Auth.csproj -c Release
+dotnet build .\Adaptive\Adaptive.csproj -c Release
 ```
 
 Override the GameManaged MSBuild property if the game lives elsewhere. The game assemblies are compile-time references and are not distributed with this patch.
+
+AdaptiveGuard intentionally requires the bundled v2 runtime hash. A rebuilt runtime with different bytes needs an explicit compatibility review and hash update. The FrameProbe project is a temporary 15-real-second timing observer used for verification; it is not part of autoload or the delivered payload.
 
 The x64 loader uses Mono's embedding API. The small vendored memory/PE helpers originate from SharpMonoInjector commit 73566c1be1e8e1bb25ab60683557958368b2cd47 (MIT); memory disposal is corrected to MEM_RELEASE. The loader filters required exports, uses 64-bit exception pointers, attaches/detaches each remote thread, restricts target process names, and retains remote allocations if a thread times out instead of freeing executing code. Removal unpatches this owner only and does not unload a live managed assembly.
 
