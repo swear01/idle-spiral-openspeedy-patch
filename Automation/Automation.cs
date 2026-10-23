@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -24,6 +25,8 @@ namespace IdleSpiralSpeedPatch
     // The four automation controllers tick once per 1 s of Time.realtimeSinceStartup, which ClockIsolation keeps at 1x.
     // Feed them a clock that runs at the OpenSpeedy factor (still at most one tick per frame, as with accelerated native
     // clocks), and keep the prestige checkpoint saves they trigger to one per 5 real seconds.
+    // Battle auto-start restarts go battle -> quitting -> battle inside one simulation step; the two battle panels react to
+    // every BattleCtrl.StateChanged by switching Doozy views and buttons, so they get the final state once per frame.
     public static class AutomationGuard
     {
         private const string Owner="local.idlespiral.openspeedy.automation";
@@ -32,11 +35,13 @@ namespace IdleSpiralSpeedPatch
         private static readonly Harmony Harmony=new Harmony(Owner);
         private static readonly string DirectoryPath=Path.GetDirectoryName(typeof(AutomationGuard).Assembly.Location);
         private static readonly Type[] Controllers={typeof(UpgradeAutomationController),typeof(PrestigeAutomationController),typeof(SoftPrestigeAutomationController),typeof(TornadoPrestigeAutomationController)};
+        private static readonly MethodInfo[] StateViews={AccessTools.Method(typeof(BattleUIManager),"OnBattleStateChanged"),AccessTools.Method(typeof(Battle_Mono),"ApplyBattleState")};
+        private static readonly List<KeyValuePair<object,MethodBase>> PendingStateViews=new List<KeyValuePair<object,MethodBase>>();
         private static Func<double> readFactor;
-        private static bool installed,inAutomation;
+        private static bool installed,inAutomation,flushingStateViews;
         private static double lastReal=double.NaN,scaled;
         private static ulong lastCheckpoint;
-        private static long frames,autoBuyRuns,checkpoints,deferredCheckpoints;
+        private static long frames,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes;
         [DllImport("kernelbase.dll",ExactSpelling=true)]private static extern void QueryUnbiasedInterruptTimePrecise(out ulong time);
         private static ulong Now(){QueryUnbiasedInterruptTimePrecise(out var value);return value;}
 
@@ -55,6 +60,8 @@ namespace IdleSpiralSpeedPatch
                         prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(BeforeTick)),finalizer:new HarmonyMethod(typeof(AutomationGuard),nameof(AfterTick)));
                 Harmony.Patch(AccessTools.Method(typeof(UpgradeAutomationController),"RunAutomation"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(CountAutoBuy)));
                 Harmony.Patch(AccessTools.Method(typeof(PrestigeCheckpoint),"TrySave"),prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(BeforeCheckpoint)));
+                foreach(var view in StateViews)Harmony.Patch(view,prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(DeferStateView)));
+                Harmony.Patch(AccessTools.Method(typeof(GameSystem),"Update"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(FlushStateViews)));
                 installed=true;Status("installed",1);
             }
             catch{Harmony.UnpatchAll(Owner);throw;}
@@ -82,13 +89,34 @@ namespace IdleSpiralSpeedPatch
             if(lastCheckpoint!=0&&now-lastCheckpoint<CheckpointIntervalTicks){deferredCheckpoints++;__result=true;return false;}
             lastCheckpoint=now;checkpoints++;return true;
         }
+        private static bool DeferStateView(object __instance,MethodBase __originalMethod)
+        {
+            if(flushingStateViews)return true;
+            battleStateEvents++;
+            foreach(var pending in PendingStateViews)
+                if(ReferenceEquals(pending.Key,__instance)&&pending.Value==__originalMethod)return false;
+            PendingStateViews.Add(new KeyValuePair<object,MethodBase>(__instance,__originalMethod));
+            return false;
+        }
+        private static void FlushStateViews(GameSystem __instance)
+        {
+            if(PendingStateViews.Count==0)return;
+            var state=new object[]{__instance.idleSystem.battleCtrl.state};
+            flushingStateViews=true;
+            try
+            {
+                foreach(var pending in PendingStateViews)
+                    if(pending.Key is UnityEngine.Object view&&view!=null){pending.Value.Invoke(view,state);battleStateFlushes++;}
+            }
+            finally{flushingStateViews=false;PendingStateViews.Clear();}
+        }
         private static void Status(string state,double factor)
         {
             try
             {
                 File.WriteAllText(Path.Combine(DirectoryPath,"automation-status.txt"),string.Format(CultureInfo.InvariantCulture,
-                    "state={0}\nfactor={1:R}\nframes={2}\nscaledSeconds={3:R}\nautoBuyRuns={4}\ncheckpoints={5}\ndeferredCheckpoints={6}\n",
-                    state,factor,frames,scaled,autoBuyRuns,checkpoints,deferredCheckpoints));
+                    "state={0}\nfactor={1:R}\nframes={2}\nscaledSeconds={3:R}\nautoBuyRuns={4}\ncheckpoints={5}\ndeferredCheckpoints={6}\nbattleStateEvents={7}\nbattleStateFlushes={8}\n",
+                    state,factor,frames,scaled,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes));
             }
             catch{}
         }

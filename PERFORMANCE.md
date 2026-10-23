@@ -69,3 +69,11 @@ AutomationGuard 改成傳入一個依 OpenSpeedy 倍率前進的時鐘，最多�
 遊戲的 `PcFrameRateController` 在視窗失去焦點時把幀率限制為 20 FPS。1000× 時每幀要推進約 50 遊戲秒，雖然倍率仍然跟得上，但畫面明顯不順。HousekeepingGuard2 現在讓 `ApplyResolvedCadence` 一律使用設定裡的幀率（目前為 60），vSync 處理不變。
 
 1000×、視窗在背景：修改前 19.8 FPS、p95 50 ms、最長一幀 104 ms；修改後 58.8 FPS、p95 18 ms、最長一幀 32 ms，倍率 999.56×。從 Steam 重開後由自動載入套用，背景時（前景為瀏覽器）在 1× 實測 59.9 FPS。背景也維持 60 FPS 會比原本多用一些 CPU／GPU。
+
+## 戰鬥自動開始（AutomationGuard）
+
+戰鬥自動開始的目標難度低於起始難度時（例如 Nuke 讓起始難度為 39，目標為 1），每贏一批就重開一次。1000× 時約每秒 1130 次。每次重開都會在同一步內把戰鬥狀態從 battle 切到 quitting 再切回 battle，而兩個戰鬥面板（`BattleUIManager`、`Battle_Mono`）每次都會切換 Doozy 結果／戰鬥畫面和按鈕，所以畫面閃動，`StartBattle` 每次約 189 µs。
+
+AutomationGuard 現在把這兩個面板的 `StateChanged` 處理延到該幀模擬結束後，用最後的戰鬥狀態各呼叫一次。戰鬥規則、重開時機與獎勵不變；真正結束的戰鬥仍會在同一幀顯示結果。
+
+實測（QuantumQuark，自動開始開啟，1000×）：修改前 451×、20 FPS、`UpdateBattle` 每步 283 µs；修改後 998×、`UpdateBattle` 每步 98 µs，68 萬次狀態切換合併為 2879 次面板更新。重開本身（每批產生新敵人等）仍然很重，這種情況下 1000× 約 21 FPS。
