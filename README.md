@@ -27,15 +27,25 @@ The Steam autoload package uses Install-SteamAutoload.ps1 to install once. Doors
 
 Restarting clears the in-memory patch, then autoload reapplies it. Keep OpenSpeedy running to retain its shared speed. The native DLL defaults to 1× if no controller retains the factor and enables itself when first loaded. Use the autoload installer's Remove action after closing the game to restore normal startup. A manifest verifies ownership and hashes before removal; unknown files and diagnostic logs are retained. Existing proxy/config/payload paths are never overwritten.
 
-`patch-status.txt` records version, state, factor, step budget, admitted seconds, backlog, real simulation milliseconds, yielded frames and overflow routed offline. Its file timestamp is from the game's accelerated process and should not be treated as independent real time. `patch-error.txt`, if created, contains loader/managed errors.
+`patch-status.txt` records version, state, factor, step budget, admitted seconds, backlog, real simulation milliseconds, yielded frames and overflow routed offline. Measure rates with an external monotonic observer. `patch-error.txt`, if created, contains loader/managed errors.
 
 A full 20× still requires enough CPU time to execute 1000 simulation steps per real second. The patch preserves time, but cannot guarantee every future scene will sustain that throughput. Network/server-controlled systems and independent UI schedules are outside this patch.
 
 ## Verification
 
+The calendar guard rewrites the 53 methods in the four hash-checked game assemblies that directly call DateTime.Now/UtcNow and DateTimeOffset.Now/UtcNow, including generated iterator/lambda methods. It reads documented GetSystemTime (UTC) and converts to local time where required. OpenSpeedy 3.3.8 does not hook that entry point; an isolated hooked-process test verifies one real second against QueryUnbiasedInterruptTimePrecise while DateTime itself advances about 55 seconds. Global .NET/Unity clock methods remain untouched. Previously compiled DailySpiral clock delegates are covered. Existing future daily reset dates and reward counts are preserved; this prevents further clock drift but does not reset already claimed days or unblock a future saved daily date early.
+
+The four assemblies are Assembly-CSharp, IdleSpiralDomain, IdleLibrary and IdleSpiral.CloudSave. The latter two cover backup/envelope timestamps and additional DateTimeOffset season deadlines. GetSystemTime returns UTC according to [Microsoft's API documentation](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsystemtime).
+
+BeginAutomaticSave is separately gated to at least 15 real seconds per save controller, matching the game's intended automatic-save interval. Its original save preparation, atomic write, completion and failure handling remain intact. Manual, pause, focus-loss and quit saves bypass this additional gate. The original accelerated coroutine can still poll the gate. The Steam bootstrap now targets CalendarGuard, which installs these changes before delegating to the unchanged simulation autoloader. Use Install-SteamAutoload.ps1 -Action Upgrade for an existing owned installation; ownership and hashes are checked before atomically replacing the two changed payload files. Unsupported or modified installations fail without overwriting unrelated files.
+
 An isolated process embeds the same Mono runtime shipped with the game. Its tests verify full step accounting, fractional carry, short/long gap handling, disabled/paused behavior, 128-step cap, timed yield/resume, bounded admission, 10,000-frame overload conservation, the independent timer, and Harmony install/remove. Remote invocation is exercised on that process before use on the game.
 
 The live test measures changes in automatic save files using an independent external Stopwatch. Version 1 reached about 20× but lacked a real-time frame limit. Version 2 measurements and external responsiveness observations are supplied separately. Extreme multipliers are tested in the isolated scheduler, not imposed on the user's live game. This does not reproduce or prove elimination of every historical freeze.
+
+The observer excludes the save that already existed before sampling; otherwise a 15-second-old initial save can materially bias the rate. Its default sampling window is 40 real seconds. With CalendarGuard, saved timestamps run at real time even though OpenSpeedy's QPC/tick clocks remain accelerated. A subsequent actual Steam launch was observed with the original executable and Steam parent, successful automatic loading, factor 10 and approximately 10.03× game progress with no offline-memory overflow. New achievement unlock/upload remains untested. An earlier roughly 55× session generated a Windows AppHangB1/1002 event and was closed; no dump from that hang exists, so its root cause remains unresolved. Do not call the high-speed freeze fixed.
+
+The user confirmed restarting the game, but did not change the multiplier. OpenSpeedy's settings file currently saves 10× and was last written before the old game closed; its hash differs from the pre-fix record. The patch only reads SP_GetSpeed and never calls SP_SetSpeed or writes OpenSpeedy settings. OpenSpeedy 3.3.8's useSpeed hook restores the saved speed when mounted, but there is no writer audit for this particular change. The origin of the saved 10× remains unresolved; do not attribute it to the user or force a higher speed to reproduce the hang.
 
 Backups of the original core assemblies and pre-application saves are retained separately. The running game continues to autosave legitimate gameplay progress; no saves were restored or edited during testing.
 
@@ -46,6 +56,7 @@ dotnet build .\Runtime\Runtime.csproj -c Release
 dotnet build .\Injector\Injector.csproj -c Release
 dotnet build .\MonoHost\MonoHost.csproj -c Release
 dotnet build .\Bootstrap\Bootstrap.csproj -c Release
+dotnet build .\Clock\Clock.csproj -c Release
 ```
 
 Override the GameManaged MSBuild property if the game lives elsewhere. The game assemblies are compile-time references and are not distributed with this patch.
