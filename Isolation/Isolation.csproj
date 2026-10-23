@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net472</TargetFramework><LangVersion>latest</LangVersion><AllowUnsafeBlocks>true</AllowUnsafeBlocks><AssemblyName>IdleSpiral.ClockIsolation</AssemblyName><GameManaged>E:\SteamLibrary\steamapps\common\Idle Spiral\IdleSpiral_Data\Managed</GameManaged></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.3" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManaged)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="IdleSpiralDomain"><HintPath>$(GameManaged)\IdleSpiralDomain.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

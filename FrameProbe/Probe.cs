@@ -18,9 +18,21 @@ namespace IdleSpiralSpeedPatch
     }
     public static class FrameProbe
     {
+#if STABILITY_SAMPLE
+        private const string Owner="local.idlespiral.frame.observer300";
+        private const ulong WindowTicks=3000000000;
+        private const string OutputName="frame-observation-300.txt";
+#elif LONG_SAMPLE
+        private const string Owner="local.idlespiral.frame.observer60";
+        private const ulong WindowTicks=600000000;
+        private const string OutputName="frame-observation-60.txt";
+#else
         private const string Owner="local.idlespiral.frame.observer";
+        private const ulong WindowTicks=150000000;
+        private const string OutputName="frame-observation.txt";
+#endif
         private static readonly Harmony Patch=new Harmony(Owner);
-        private static readonly string Output=Path.Combine(Path.GetDirectoryName(typeof(FrameProbe).Assembly.Location),"frame-observation.txt");
+        private static readonly string Output=Path.Combine(Path.GetDirectoryName(typeof(FrameProbe).Assembly.Location),OutputName);
         private static readonly MethodInfo Target=AccessTools.Method(typeof(GameSystem),"Update");
         private static readonly List<double> Periods=new List<double>();
         private static ulong start,previous;
@@ -42,7 +54,7 @@ namespace IdleSpiralSpeedPatch
             if(start==0){start=previous=__state;return;}
             Periods.Add((__state-previous)/10000000.0); previous=__state;
             frames++; updateSeconds+=(now-__state)/10000000.0; gameSeconds+=__instance.AdmittedGameSimulationDelta;
-            if(now-start<150000000)return;
+            if(now-start<WindowTicks)return;
             Remove();
             Periods.Sort();
             double elapsed=(now-start)/10000000.0;

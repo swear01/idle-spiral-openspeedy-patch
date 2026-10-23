@@ -9,6 +9,7 @@ $payload = Join-Path $GameDirectory 'IdleSpiralSpeedPatch'
 $manifestPath = Join-Path $payload 'install-manifest.json'
 $proxy = Join-Path $GameDirectory 'winhttp.dll'
 $config = Join-Path $GameDirectory 'doorstop_config.ini'
+$isolatedNativeHash = 'c72ba4d9e35c5c00efc113e541da91a02dbc0c85c6fb2effff5cee63898bc70c'
 $boundedRuntimeHash = 'dbfeebdc66091f27f63320971cd3f369b3fd66928fc6a66af336425e44df635f'
 $expected = @{
     'IdleSpiralDomain.dll' = 'caec145b335c11fdd4cb86f5ce72f057ccec83297507ad0d1ed838aceb29f37b'
@@ -17,6 +18,8 @@ $expected = @{
     'IdleSpiral.CloudSave.dll' = '1b4c9c790e662ed09a6255c56c01a841865c2569882622ed9142db6b40a0970f'
     'IdleSystem.Auth.dll' = 'c1e2a0f1c8352428ab8f4d9bb2bb02d380d48781c0499c02ef76baf0f6d05923'
     'IdleSystem.CloudSave.dll' = '1daee61b66847527ccb60415183c1c167fb4f416047f1591ffb1b94fadd8ca74'
+    'IdleSystem.Analytics.dll' = '1e1c233c358ffa6475269d6d86b0c8c460ac0dc651bd0a765599242bad684029'
+    'com.rlabrecque.steamworks.net.dll' = '0b7d5a5fc171bd89b663291dc83002a5f69e7124882d2cb1f075295057030058'
 }
 
 function Assert-OwnedInstallation($manifest) {
@@ -37,7 +40,7 @@ if ($Action -eq 'Status') {
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     Assert-OwnedInstallation $manifest
     Write-Output 'Autoload installed; all owned file hashes match.'
-    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt', 'auth-status.txt', 'auth-error.txt', 'adaptive-status.txt', 'adaptive-error.txt', 'render-status.txt', 'render-error.txt', 'theory-status.txt', 'theory-error.txt') {
+    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt', 'auth-status.txt', 'auth-error.txt', 'adaptive-status.txt', 'adaptive-error.txt', 'render-status.txt', 'render-error.txt', 'theory-status.txt', 'theory-error.txt', 'housekeeping-status.txt', 'housekeeping-error.txt', 'designcount-status.txt', 'designcount-error.txt', 'isolation-status.txt', 'isolation-error.txt', 'macrostep-status.txt', 'macrostep-error.txt') {
         $path = Join-Path $payload $name
         if (Test-Path -LiteralPath $path) { Write-Output "${name}:"; Get-Content -LiteralPath $path }
     }
@@ -45,6 +48,17 @@ if ($Action -eq 'Status') {
 }
 
 if ($Action -in 'Install', 'Upgrade') {
+    $nativePath = $OpenSpeedyDll
+    if ($Action -eq 'Upgrade') {
+        $loaderSettings = Get-Content -LiteralPath (Join-Path $payload 'openspeedy-loader.txt')
+        if ($loaderSettings.Count -ne 2 -or $loaderSettings[1] -ne $isolatedNativeHash) {
+            throw 'Installed OpenSpeedy configuration does not support clock isolation.'
+        }
+        $nativePath = $loaderSettings[0]
+    }
+    if ((Get-FileHash -LiteralPath $nativePath).Hash -ne $isolatedNativeHash) {
+        throw 'Unsupported OpenSpeedy native binary for clock isolation; nothing was changed.'
+    }
     if ((Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'payload\IdleSpiral.SpeedPatch.SteamGuard.dll')).Hash -ne $boundedRuntimeHash) {
         throw 'Unsupported packaged simulation runtime; preserve the bundled version.'
     }
@@ -57,7 +71,7 @@ if ($Action -eq 'Upgrade') {
     if ((Get-FileHash -LiteralPath (Join-Path $payload 'IdleSpiral.SpeedPatch.SteamGuard.dll')).Hash -ne $boundedRuntimeHash) {
         throw 'Installed simulation runtime is not supported by the adaptive guard.'
     }
-    $changes = @('IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
+    $changes = @('IdleSpiral.ClockIsolation.dll', 'IdleSpiral.MacroStepGuard.dll', 'IdleSpiral.DesignCountGuard.dll', 'IdleSpiral.HousekeepingGuard2.dll', 'IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
     $backups = @{}
     $written = [Collections.Generic.List[string]]::new()
     foreach ($name in $changes) {
@@ -70,7 +84,7 @@ if ($Action -eq 'Upgrade') {
             $backups[$name] = [IO.File]::ReadAllBytes($target)
         } else { $backups[$name] = $null }
     }
-    foreach ($name in 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll') {
+    foreach ($name in 'IdleSpiral.ClockIsolation.dll', 'IdleSpiral.MacroStepGuard.dll', 'IdleSpiral.DesignCountGuard.dll', 'IdleSpiral.HousekeepingGuard2.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll') {
         $guardTarget = Join-Path $payload $name
         if ((Test-Path -LiteralPath $guardTarget) -and
             (Get-FileHash -LiteralPath $guardTarget).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot "payload\$name")).Hash -and
@@ -116,7 +130,7 @@ if ($Action -eq 'Upgrade') {
         [IO.File]::WriteAllBytes($manifestPath, $oldManifest)
         throw
     }
-    Write-Output 'Rendering, theory, adaptive simulation, authentication, calendar and autosave guards installed for the next launch. Speed settings were preserved.'
+    Write-Output 'Clock isolation, macro-step, design-count, background, rendering, theory, simulation, authentication, calendar and autosave guards installed for the next launch. Speed settings were preserved.'
     return
 }
 
