@@ -14,6 +14,8 @@ $expected = @{
     'Assembly-CSharp.dll' = 'a67ee1d53fc2247d738ff2166f1a5e217bcb3fdebc3dfebf0a21393b8e5fbfbb'
     'IdleLibrary.dll' = '9e665da9e2b44503d98db50557dfefb5cd43c892ab47b8a7b8995535b3784a3e'
     'IdleSpiral.CloudSave.dll' = '1b4c9c790e662ed09a6255c56c01a841865c2569882622ed9142db6b40a0970f'
+    'IdleSystem.Auth.dll' = 'c1e2a0f1c8352428ab8f4d9bb2bb02d380d48781c0499c02ef76baf0f6d05923'
+    'IdleSystem.CloudSave.dll' = '1daee61b66847527ccb60415183c1c167fb4f416047f1591ffb1b94fadd8ca74'
 }
 
 function Assert-OwnedInstallation($manifest) {
@@ -34,7 +36,7 @@ if ($Action -eq 'Status') {
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     Assert-OwnedInstallation $manifest
     Write-Output 'Autoload installed; all owned file hashes match.'
-    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt') {
+    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt', 'auth-status.txt', 'auth-error.txt') {
         $path = Join-Path $payload $name
         if (Test-Path -LiteralPath $path) { Write-Output "${name}:"; Get-Content -LiteralPath $path }
     }
@@ -45,7 +47,7 @@ if ($Action -eq 'Upgrade') {
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Install autoload before upgrading.' }
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     Assert-OwnedInstallation $manifest
-    $changes = @('IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
+    $changes = @('IdleSpiral.AuthGuard.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
     $backups = @{}
     $written = [Collections.Generic.List[string]]::new()
     foreach ($name in $changes) {
@@ -58,11 +60,13 @@ if ($Action -eq 'Upgrade') {
             $backups[$name] = [IO.File]::ReadAllBytes($target)
         } else { $backups[$name] = $null }
     }
-    $clockTarget = Join-Path $payload 'IdleSpiral.CalendarGuard.dll'
-    if ((Test-Path -LiteralPath $clockTarget) -and
-        (Get-FileHash -LiteralPath $clockTarget).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'payload\IdleSpiral.CalendarGuard.dll')).Hash -and
-        @(Get-Process -Name IdleSpiral -ErrorAction SilentlyContinue | Where-Object Path -EQ (Join-Path $GameDirectory 'IdleSpiral.exe')).Count -gt 0) {
-        throw 'Close the game before replacing an existing CalendarGuard version.'
+    foreach ($name in 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.AuthGuard.dll') {
+        $guardTarget = Join-Path $payload $name
+        if ((Test-Path -LiteralPath $guardTarget) -and
+            (Get-FileHash -LiteralPath $guardTarget).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot "payload\$name")).Hash -and
+            @(Get-Process -Name IdleSpiral -ErrorAction SilentlyContinue | Where-Object Path -EQ (Join-Path $GameDirectory 'IdleSpiral.exe')).Count -gt 0) {
+            throw "Close the game before replacing an existing guard version: $name"
+        }
     }
     foreach ($name in $expected.Keys) {
         if ((Get-FileHash -LiteralPath (Join-Path $GameDirectory "IdleSpiral_Data\Managed\$name")).Hash -ne $expected[$name]) {
@@ -102,7 +106,7 @@ if ($Action -eq 'Upgrade') {
         [IO.File]::WriteAllBytes($manifestPath, $oldManifest)
         throw
     }
-    Write-Output 'Calendar and real-time autosave guard installed for the next launch. Existing simulation patch and speed settings were preserved.'
+    Write-Output 'Authentication, calendar and real-time autosave guards installed for the next launch. Existing simulation patch and speed settings were preserved.'
     return
 }
 

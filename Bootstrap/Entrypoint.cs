@@ -17,7 +17,7 @@ namespace Doorstop
                 File.Delete(Path.Combine(directory, "autoload-status.txt"));
                 File.Delete(Path.Combine(directory, "autoload-error.txt"));
                 string helper = Path.Combine(directory, "IdleSpiral.PatchLoader.exe");
-                string runtime = Path.Combine(directory, "IdleSpiral.CalendarGuard.dll");
+                string runtime = Path.Combine(directory, "IdleSpiral.AuthGuard.dll");
                 var command = new StringBuilder("\"" + helper + "\" autoload " + GetCurrentProcessId() + " \"" + runtime + "\"");
                 var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)) };
                 if (!CreateProcess(helper, command, IntPtr.Zero, IntPtr.Zero, false, 0x08000000,
