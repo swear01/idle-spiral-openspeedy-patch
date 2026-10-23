@@ -27,6 +27,7 @@ namespace IdleSpiralSpeedPatch
             Install();
             Assembly.LoadFrom(Path.Combine(DirectoryPath,"IdleSpiral.DesignCountGuard.dll")).GetType("IdleSpiralSpeedPatch.Loader").GetMethod("AutoInstall").Invoke(null,null);
             Assembly.LoadFrom(Path.Combine(DirectoryPath,"IdleSpiral.MacroStepGuard.dll")).GetType("IdleSpiralSpeedPatch.Loader").GetMethod("AutoInstall").Invoke(null,null);
+            Assembly.LoadFrom(Path.Combine(DirectoryPath,"IdleSpiral.AutomationGuard.dll")).GetType("IdleSpiralSpeedPatch.Loader").GetMethod("AutoInstall").Invoke(null,null);
         }
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern IntPtr GetModuleHandle(string name);
         [DllImport("speedpatch64.dll",CallingConvention=CallingConvention.Cdecl)]private static extern void SP_Disable(uint processId);

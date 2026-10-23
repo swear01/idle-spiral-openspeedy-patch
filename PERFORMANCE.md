@@ -55,3 +55,11 @@ HousekeepingGuard2 停止 IdleSystem.Analytics 的協程與監測執行緒，避
 400× 連續 15 分鐘監測：61 個取樣全部有回應，Steam 回呼最長 5.8 ms；其中 300 秒的幀觀測為 399.945×、57.9 FPS、最長一幀 135 ms。
 
 遊戲設定的貨幣更新間隔（`currencyUpdateTick`，1～50）已透過遊戲自己的 `ApplyCurrencyUpdateTick` 從 4 改為 20，並寫入存檔。重開後在 100× 實測：貨幣結算從 15 降到 4 µs／步，每步總成本從 62 降到 50 µs。
+
+## 自動化跟著倍率（AutomationGuard）
+
+遊戲的四個自動化（自動購買升級、自動轉生、自動 Omega 轉生、自動 Tornado 轉生）都依 `Time.realtimeSinceStartup` 每 1 真實秒執行一次。ClockIsolation 讓真實時鐘維持 1×，所以在 1000× 時，等於每 1000 遊戲秒才執行一次。以前原生時鐘也被加速，實際上等於每幀執行一次。
+
+AutomationGuard 改成傳入一個依 OpenSpeedy 倍率前進的時鐘，最多每幀執行一次，與以前時鐘加速時的行為相同；倍率 1× 時行為不變。由自動化觸發的轉生存檔點（`PrestigeCheckpoint.TrySave`，會完整寫入存檔）最多每 5 真實秒寫一次，被略過的存檔點由下一次存檔點或 15 秒自動存檔補上；手動轉生不受影響。
+
+1000× 實測：加入前 999.74×、57.7 FPS、GameSystem.Update 每幀 4.67 ms；加入後 999.72×、58.8 FPS、4.61 ms。1025 幀內自動購買執行 1023 次；自動轉生觸發 84 次存檔點，實際寫入 3 次、延後 81 次。
