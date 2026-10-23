@@ -63,3 +63,9 @@ HousekeepingGuard2 停止 IdleSystem.Analytics 的協程與監測執行緒，避
 AutomationGuard 改成傳入一個依 OpenSpeedy 倍率前進的時鐘，最多每幀執行一次，與以前時鐘加速時的行為相同；倍率 1× 時行為不變。由自動化觸發的轉生存檔點（`PrestigeCheckpoint.TrySave`，會完整寫入存檔）最多每 5 真實秒寫一次，被略過的存檔點由下一次存檔點或 15 秒自動存檔補上；手動轉生不受影響。
 
 1000× 實測：加入前 999.74×、57.7 FPS、GameSystem.Update 每幀 4.67 ms；加入後 999.72×、58.8 FPS、4.61 ms。1025 幀內自動購買執行 1023 次；自動轉生觸發 84 次存檔點，實際寫入 3 次、延後 81 次。
+
+## 背景幀率（HousekeepingGuard2）
+
+遊戲的 `PcFrameRateController` 在視窗失去焦點時把幀率限制為 20 FPS。1000× 時每幀要推進約 50 遊戲秒，雖然倍率仍然跟得上，但畫面明顯不順。HousekeepingGuard2 現在讓 `ApplyResolvedCadence` 一律使用設定裡的幀率（目前為 60），vSync 處理不變。
+
+1000×、視窗在背景：修改前 19.8 FPS、p95 50 ms、最長一幀 104 ms；修改後 58.8 FPS、p95 18 ms、最長一幀 32 ms，倍率 999.56×。從 Steam 重開後由自動載入套用，背景時（前景為瀏覽器）在 1× 實測 59.9 FPS。背景也維持 60 FPS 會比原本多用一些 CPU／GPU。

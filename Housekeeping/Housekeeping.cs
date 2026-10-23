@@ -41,6 +41,7 @@ namespace IdleSpiralSpeedPatch
         private static readonly MethodInfo Steam=AccessTools.Method(typeof(SteamManager),"Update");
         private static readonly MethodInfo Init=AccessTools.Method(typeof(IdleAnalytics),"Init");
         private static readonly MethodInfo WatchdogInstall=AccessTools.Method(typeof(MainThreadWatchdog),"Install");
+        private static readonly MethodInfo Cadence=AccessTools.Method(typeof(PcFrameRateController),"ApplyResolvedCadence");
         private static readonly List<IdleAnalytics> Disabled=new List<IdleAnalytics>();
         private static MethodInfo stepBudget,runFrame;
         private static Func<double> readFactor;
@@ -84,6 +85,7 @@ namespace IdleSpiralSpeedPatch
                 Harmony.Patch(Steam,prefix:new HarmonyMethod(typeof(Housekeeping),nameof(BeforeSteam)),postfix:new HarmonyMethod(typeof(Housekeeping),nameof(AfterSteam)));
                 Harmony.Patch(Init,prefix:new HarmonyMethod(typeof(Housekeeping),nameof(SkipAnalytics)));
                 Harmony.Patch(WatchdogInstall,prefix:new HarmonyMethod(typeof(Housekeeping),nameof(SkipAnalytics)));
+                Harmony.Patch(Cadence,prefix:new HarmonyMethod(typeof(Housekeeping),nameof(KeepFocusedCadence)));
                 requested=installed=true;
                 Harmony.Patch(Frame,postfix:new HarmonyMethod(typeof(Housekeeping),nameof(OnFrame)));
                 Status("scheduled");
@@ -102,6 +104,8 @@ namespace IdleSpiralSpeedPatch
         private static int StepBudget(double factor){return (int)Math.Min(512,Math.Max(4,Math.Ceiling(4*factor)));}
         private static int FrameBudget(){return readFactor()>=100?400000:originalBudget();}
         private static bool SkipAnalytics(){return !requested;}
+        // The game caps unfocused windows at 20 FPS, which at high factors means 50+ game seconds per frame; keep the saved rate.
+        private static void KeepFocusedCadence(ref bool focused){focused=true;}
         private static bool BeforeSteam(out ulong __state)
         {
             var now=Now();__state=0;
@@ -144,13 +148,13 @@ namespace IdleSpiralSpeedPatch
         public static void Remove(){requested=false;Status("restore-scheduled");}
         private static void Unpatch()
         {
-            foreach(var method in new[]{Frame,Steam,Init,WatchdogInstall,runFrame})if(method!=null)Harmony.Unpatch(method,HarmonyPatchType.All,Owner);
+            foreach(var method in new[]{Frame,Steam,Init,WatchdogInstall,Cadence,runFrame})if(method!=null)Harmony.Unpatch(method,HarmonyPatchType.All,Owner);
             installed=false;
         }
         private static void Status(string state)
         {
             File.WriteAllText(Path.Combine(DirectoryPath,"housekeeping-status.txt"),string.Format(CultureInfo.InvariantCulture,
-                "state={0}\nversion=2-background-trim\npid={1}\nanalyticsComponentsPaused={2}\nwatchdogStopApplied={3}\nsteamCallbackTargetHz=20\nsteamPolls={4}\nsteamSkippedFrames={5}\nmaximumSteamMilliseconds={6:R}\nmaximumSteps=512\nhighSpeedSimulationBudgetMilliseconds=40\n",
+                "state={0}\nversion=3-background-cadence\npid={1}\nanalyticsComponentsPaused={2}\nwatchdogStopApplied={3}\nsteamCallbackTargetHz=20\nsteamPolls={4}\nsteamSkippedFrames={5}\nmaximumSteamMilliseconds={6:R}\nmaximumSteps=512\nhighSpeedSimulationBudgetMilliseconds=40\nbackgroundFrameCap=saved\n",
                 state,Process.GetCurrentProcess().Id,Disabled.Count,applied,polls,skipped,maximumSteamMilliseconds));
         }
         private static void Verify(Assembly assembly,string expected)
@@ -192,7 +196,7 @@ namespace IdleSpiralSpeedPatch
             }
             finally{adaptive.GetMethod("Remove").Invoke(null,null);}
             Remove();Unpatch();
-            if(new[]{Frame,Steam,Init,WatchdogInstall,runFrame}.Any(m=>HarmonyLib.Harmony.GetPatchInfo(m)?.Owners.Contains(Owner)==true))throw new InvalidOperationException("Removal failed.");
+            if(new[]{Frame,Steam,Init,WatchdogInstall,Cadence,runFrame}.Any(m=>HarmonyLib.Harmony.GetPatchInfo(m)?.Owners.Contains(Owner)==true))throw new InvalidOperationException("Removal failed.");
             Status("tested");
             File.WriteAllText(Path.Combine(DirectoryPath,"housekeeping-selftest.txt"),"PASS: supported hashes; idempotent hooks; 20 Hz real-time cadence; low/high speed caps; 512-step cap with conserved debt; timed yield after slow step; own hook removal. Analytics pause requires live validation.\n");
         }
