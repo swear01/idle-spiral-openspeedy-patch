@@ -37,7 +37,7 @@ if ($Action -eq 'Status') {
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     Assert-OwnedInstallation $manifest
     Write-Output 'Autoload installed; all owned file hashes match.'
-    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt', 'auth-status.txt', 'auth-error.txt', 'adaptive-status.txt', 'adaptive-error.txt') {
+    foreach ($name in 'autoload-status.txt', 'autoload-error.txt', 'patch-status.txt', 'patch-error.txt', 'clock-status.txt', 'clock-error.txt', 'auth-status.txt', 'auth-error.txt', 'adaptive-status.txt', 'adaptive-error.txt', 'render-status.txt', 'render-error.txt', 'theory-status.txt', 'theory-error.txt') {
         $path = Join-Path $payload $name
         if (Test-Path -LiteralPath $path) { Write-Output "${name}:"; Get-Content -LiteralPath $path }
     }
@@ -57,7 +57,7 @@ if ($Action -eq 'Upgrade') {
     if ((Get-FileHash -LiteralPath (Join-Path $payload 'IdleSpiral.SpeedPatch.SteamGuard.dll')).Hash -ne $boundedRuntimeHash) {
         throw 'Installed simulation runtime is not supported by the adaptive guard.'
     }
-    $changes = @('IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
+    $changes = @('IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.Autoload.dll')
     $backups = @{}
     $written = [Collections.Generic.List[string]]::new()
     foreach ($name in $changes) {
@@ -70,7 +70,7 @@ if ($Action -eq 'Upgrade') {
             $backups[$name] = [IO.File]::ReadAllBytes($target)
         } else { $backups[$name] = $null }
     }
-    foreach ($name in 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.AdaptiveGuard.dll') {
+    foreach ($name in 'IdleSpiral.CalendarGuard.dll', 'IdleSpiral.AuthGuard.dll', 'IdleSpiral.AdaptiveGuard.dll', 'IdleSpiral.RenderGuard.dll', 'IdleSpiral.TheoryGuard.dll') {
         $guardTarget = Join-Path $payload $name
         if ((Test-Path -LiteralPath $guardTarget) -and
             (Get-FileHash -LiteralPath $guardTarget).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot "payload\$name")).Hash -and
@@ -116,7 +116,7 @@ if ($Action -eq 'Upgrade') {
         [IO.File]::WriteAllBytes($manifestPath, $oldManifest)
         throw
     }
-    Write-Output 'Adaptive simulation budget, authentication, calendar and autosave guards installed for the next launch. Speed settings were preserved.'
+    Write-Output 'Rendering, theory, adaptive simulation, authentication, calendar and autosave guards installed for the next launch. Speed settings were preserved.'
     return
 }
 

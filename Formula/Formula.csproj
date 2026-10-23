@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>IdleSpiral.FormulaGuard</AssemblyName>
+    <GameManaged>E:\SteamLibrary\steamapps\common\Idle Spiral\IdleSpiral_Data\Managed</GameManaged>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.3" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="IdleLibrary"><HintPath>$(GameManaged)\IdleLibrary.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BigDouble"><HintPath>$(GameManaged)\BigDouble.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
