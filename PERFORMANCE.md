@@ -85,3 +85,9 @@ Daily Spiral 的次數在真實本地午夜重置（CalendarGuard 刻意讓日�
 Daily 面板的「距離重置」倒數改為顯示目前遊戲日剩餘的遊戲秒數；真實午夜換算成遊戲秒（乘以倍率）後若更早則顯示午夜。1000× 時每真實秒減少約 1000 秒。
 
 實測：存檔原本停在先前時鐘超前留下的 2026-10-26（3 次已用完）；1000× 約 86 秒後重置，日期變成 2026-10-24，剩餘 3 次。倒數實測：12 真實秒內從 30320 降到 18526。
+
+## Theory 自動研究跟著倍率（AutomationGuard）
+
+Pythagorean theorem 的 Auto Study 每 1 真實秒（`WaitForSecondsRealtime`）呼叫一次 `FirstTheoryTransaction.LevelUpByLevel`，升 100×`TickManager.CurrentMultiplier` 級；時鐘隔離後就只剩每真實秒 100 級。原方法逐級迴圈（`CanBuy`／`Pay`／`UpdateResourceInfo`），實測每級約 7 µs，所以單純把上限調高（例如 1M）會讓那一幀卡住數秒。迴圈中等級要到最後才寫回，每一級都付起始等級的價格；AutomationGuard 改成一次算出 `min(要求級數, 各資源 floor(資源/單價))`，一次扣 `單價×級數`，結果與原迴圈相同，但成本固定。要求級數再乘上倍率，所以每遊戲秒 100 級；倍率 1× 時與原遊戲相同。若交易結構不是預期的 `MultipleTransaction`／`Transaction`，就退回原方法。
+
+實測（1000×）：每真實秒升 100,000 級，每次約 45 µs（原本 100 級約 690 µs）；四種資源的實際扣除量都等於單價×級數（只有約 1e-12 的浮點差）。資源不夠時，級數由可負擔數量決定。
