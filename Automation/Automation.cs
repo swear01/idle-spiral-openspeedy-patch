@@ -27,11 +27,14 @@ namespace IdleSpiralSpeedPatch
     // clocks), and keep the prestige checkpoint saves they trigger to one per 5 real seconds.
     // Battle auto-start restarts go battle -> quitting -> battle inside one simulation step; the two battle panels react to
     // every BattleCtrl.StateChanged by switching Doozy views and buttons, so they get the final state once per frame.
+    // Daily Spiral tries reset at real local midnight; every 86400 extra game seconds from the OpenSpeedy factor resets them
+    // once more by clearing the stored reset date, so the save only ever holds the real date. Season runs keep the real calendar.
     public static class AutomationGuard
     {
         private const string Owner="local.idlespiral.openspeedy.automation";
         private const string RuntimeHash="dbfeebdc66091f27f63320971cd3f369b3fd66928fc6a66af336425e44df635f";
         private const ulong CheckpointIntervalTicks=50000000;
+        private const double GameDaySeconds=86400;
         private static readonly Harmony Harmony=new Harmony(Owner);
         private static readonly string DirectoryPath=Path.GetDirectoryName(typeof(AutomationGuard).Assembly.Location);
         private static readonly Type[] Controllers={typeof(UpgradeAutomationController),typeof(PrestigeAutomationController),typeof(SoftPrestigeAutomationController),typeof(TornadoPrestigeAutomationController)};
@@ -39,9 +42,9 @@ namespace IdleSpiralSpeedPatch
         private static readonly List<KeyValuePair<object,MethodBase>> PendingStateViews=new List<KeyValuePair<object,MethodBase>>();
         private static Func<double> readFactor;
         private static bool installed,inAutomation,flushingStateViews;
-        private static double lastReal=double.NaN,scaled;
-        private static ulong lastCheckpoint;
-        private static long frames,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes;
+        private static double lastReal=double.NaN,scaled,extraDaySeconds;
+        private static ulong lastCheckpoint,lastDayTicks;
+        private static long frames,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes,dailySpiralResets;
         [DllImport("kernelbase.dll",ExactSpelling=true)]private static extern void QueryUnbiasedInterruptTimePrecise(out ulong time);
         private static ulong Now(){QueryUnbiasedInterruptTimePrecise(out var value);return value;}
 
@@ -61,7 +64,7 @@ namespace IdleSpiralSpeedPatch
                 Harmony.Patch(AccessTools.Method(typeof(UpgradeAutomationController),"RunAutomation"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(CountAutoBuy)));
                 Harmony.Patch(AccessTools.Method(typeof(PrestigeCheckpoint),"TrySave"),prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(BeforeCheckpoint)));
                 foreach(var view in StateViews)Harmony.Patch(view,prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(DeferStateView)));
-                Harmony.Patch(AccessTools.Method(typeof(GameSystem),"Update"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(FlushStateViews)));
+                Harmony.Patch(AccessTools.Method(typeof(GameSystem),"Update"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(AfterFrame)));
                 installed=true;Status("installed",1);
             }
             catch{Harmony.UnpatchAll(Owner);throw;}
@@ -98,6 +101,24 @@ namespace IdleSpiralSpeedPatch
             PendingStateViews.Add(new KeyValuePair<object,MethodBase>(__instance,__originalMethod));
             return false;
         }
+        private static void AfterFrame(GameSystem __instance)
+        {
+            FlushStateViews(__instance);
+            AdvanceGameDay(__instance.idleSystem);
+        }
+        private static void AdvanceGameDay(IdleSpiralSystem system)
+        {
+            var now=Now();
+            double factor=readFactor();
+            if(lastDayTicks!=0&&factor>1)extraDaySeconds+=(now-lastDayTicks)/1e7*(factor-1);
+            lastDayTicks=now;
+            if(extraDaySeconds<GameDaySeconds)return;
+            extraDaySeconds%=GameDaySeconds;
+            var dto=system?.dto;
+            if(dto==null||system.dailySpiral==null||SeasonRun.IsSeasonRun(dto))return;
+            dto.dailyLastResetDate=0;
+            if(system.dailySpiral.EnsureCurrentDay())dailySpiralResets++;
+        }
         private static void FlushStateViews(GameSystem __instance)
         {
             if(PendingStateViews.Count==0)return;
@@ -115,8 +136,8 @@ namespace IdleSpiralSpeedPatch
             try
             {
                 File.WriteAllText(Path.Combine(DirectoryPath,"automation-status.txt"),string.Format(CultureInfo.InvariantCulture,
-                    "state={0}\nfactor={1:R}\nframes={2}\nscaledSeconds={3:R}\nautoBuyRuns={4}\ncheckpoints={5}\ndeferredCheckpoints={6}\nbattleStateEvents={7}\nbattleStateFlushes={8}\n",
-                    state,factor,frames,scaled,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes));
+                    "state={0}\nfactor={1:R}\nframes={2}\nscaledSeconds={3:R}\nautoBuyRuns={4}\ncheckpoints={5}\ndeferredCheckpoints={6}\nbattleStateEvents={7}\nbattleStateFlushes={8}\ndailySpiralResets={9}\nextraDaySeconds={10:F0}\n",
+                    state,factor,frames,scaled,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes,dailySpiralResets,extraDaySeconds));
             }
             catch{}
         }
