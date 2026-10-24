@@ -93,3 +93,9 @@ Pythagorean theorem 的 Auto Study 每 1 真實秒（`WaitForSecondsRealtime`）
 實測（1000×）：每真實秒升 100,000 級，每次約 45 µs（原本 100 級約 690 µs）；四種資源的實際扣除量都等於單價×級數（只有約 1e-12 的浮點差）。資源不夠時，級數由可負擔數量決定。
 
 取消上限後的實測（1000×）：第一批從 29,394,714 升到 95,686,538 級（+66,291,824），花掉約 99.999% 的 Inspiration（1.94e19）；之後要等 Inspiration 收入累積到下一級的價格，才會再買。這時速度由 Inspiration 收入決定，不再由上限決定。代價：Pythagorean 每秒都會用掉當下能用的 Inspiration 和 Theory 材料。
+
+## 其他 Theory 的自動升級（AutomationGuard）
+
+其他九個 Theory 靠研究 EXP 升級：EXP 滿了按 Level Up 升 1 級，EXP 歸零（`OtherTheoryTransaction`，不花資源）。原遊戲只有 Pythagorean 有 Auto Study 開關。AutomationGuard 讓 Theory 面板上的同一個 Auto Study 開關在每個 Theory 都會顯示。其他九個預設開啟，狀態存在 DLL 旁的 `theory-auto.txt`（`off=` 列出關閉的 ID），不寫進存檔；Pythagorean 仍用原本存檔裡的開關。Pythagorean 的自動研究原本讀開關元件的 `isOn`，改成直接讀存檔旗標（transpiler，只換一處）；切到其他 Theory 並關掉開關時，Pythagorean 不受影響。每幀檢查一次：開啟中、EXP 已滿、本身或前一個 Theory 等級 >0 的，就呼叫遊戲自己的 `TryLevelUp`（等同按 Level Up）。
+
+實測（1000×）：九個 Theory 都會自動升級。每幀約 3 µs，每真實秒約 0.1 ms。改成每個模擬步檢查一次的版本實測是每真實秒約 8 ms，所以改為每幀；代價是升級時可能損失最多一幀（1000× 約 16 遊戲秒）的溢出 EXP，以目前每級數千遊戲秒來看不到 0.5%。開關測試：theory 3 預設勾選；取消後 `theory-auto.txt` 變成 `off=3`，存檔的 Pythagorean 旗標維持 True，theory 3 停在 127，同時 Pythagorean 從 29.4B 繼續升到 30.2B；重新勾選後 theory 3 恢復升級。

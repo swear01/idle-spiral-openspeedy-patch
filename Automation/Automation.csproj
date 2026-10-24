@@ -12,6 +12,7 @@
     <Reference Include="IdleSpiralDomain"><HintPath>$(GameManaged)\IdleSpiralDomain.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BigDouble"><HintPath>$(GameManaged)\BigDouble.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="IdleLibrary"><HintPath>$(GameManaged)\IdleLibrary.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(GameManaged)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>
