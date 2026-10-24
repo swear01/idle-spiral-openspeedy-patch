@@ -29,6 +29,7 @@ namespace IdleSpiralSpeedPatch
     // every BattleCtrl.StateChanged by switching Doozy views and buttons, so they get the final state once per frame.
     // Daily Spiral tries reset at real local midnight; every 86400 extra game seconds from the OpenSpeedy factor resets them
     // once more by clearing the stored reset date, so the save only ever holds the real date. Season runs keep the real calendar.
+    // The Daily Spiral reset countdown then shows whichever comes first, in game seconds.
     public static class AutomationGuard
     {
         private const string Owner="local.idlespiral.openspeedy.automation";
@@ -41,7 +42,7 @@ namespace IdleSpiralSpeedPatch
         private static readonly MethodInfo[] StateViews={AccessTools.Method(typeof(BattleUIManager),"OnBattleStateChanged"),AccessTools.Method(typeof(Battle_Mono),"ApplyBattleState")};
         private static readonly List<KeyValuePair<object,MethodBase>> PendingStateViews=new List<KeyValuePair<object,MethodBase>>();
         private static Func<double> readFactor;
-        private static bool installed,inAutomation,flushingStateViews;
+        private static bool installed,inAutomation,flushingStateViews,gameDayActive;
         private static double lastReal=double.NaN,scaled,extraDaySeconds;
         private static ulong lastCheckpoint,lastDayTicks;
         private static long frames,autoBuyRuns,checkpoints,deferredCheckpoints,battleStateEvents,battleStateFlushes,dailySpiralResets;
@@ -65,6 +66,7 @@ namespace IdleSpiralSpeedPatch
                 Harmony.Patch(AccessTools.Method(typeof(PrestigeCheckpoint),"TrySave"),prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(BeforeCheckpoint)));
                 foreach(var view in StateViews)Harmony.Patch(view,prefix:new HarmonyMethod(typeof(AutomationGuard),nameof(DeferStateView)));
                 Harmony.Patch(AccessTools.Method(typeof(GameSystem),"Update"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(AfterFrame)));
+                Harmony.Patch(AccessTools.Method(typeof(DailyBonusScreenController),"SecondsUntilLocalMidnight"),postfix:new HarmonyMethod(typeof(AutomationGuard),nameof(GameDayCountdown)));
                 installed=true;Status("installed",1);
             }
             catch{Harmony.UnpatchAll(Owner);throw;}
@@ -112,12 +114,17 @@ namespace IdleSpiralSpeedPatch
             double factor=readFactor();
             if(lastDayTicks!=0&&factor>1)extraDaySeconds+=(now-lastDayTicks)/1e7*(factor-1);
             lastDayTicks=now;
+            var dto=system?.dto;
+            gameDayActive=factor>1&&dto!=null&&system.dailySpiral!=null&&!SeasonRun.IsSeasonRun(dto);
             if(extraDaySeconds<GameDaySeconds)return;
             extraDaySeconds%=GameDaySeconds;
-            var dto=system?.dto;
-            if(dto==null||system.dailySpiral==null||SeasonRun.IsSeasonRun(dto))return;
+            if(!gameDayActive)return;
             dto.dailyLastResetDate=0;
             if(system.dailySpiral.EnsureCurrentDay())dailySpiralResets++;
+        }
+        private static void GameDayCountdown(ref long __result)
+        {
+            if(gameDayActive)__result=(long)Math.Min(__result*readFactor(),Math.Ceiling(GameDaySeconds-extraDaySeconds));
         }
         private static void FlushStateViews(GameSystem __instance)
         {
