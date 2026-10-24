@@ -36,7 +36,7 @@ namespace IdleSpiralSpeedPatch
     // The Daily Spiral reset countdown then shows whichever comes first, in game seconds.
     // Theory auto study levels up 100 x TickManager multiplier per real second through LevelUpByLevel, which loops once per
     // level (about 7 us each) and charges every level the starting level's cost, since the level is only written after the
-    // loop. The batch is charged that cost once instead, and scaled by the OpenSpeedy factor.
+    // loop. The batch is charged that cost once instead; above 1x it takes every level the resources afford.
     public static class AutomationGuard
     {
         private const string Owner="local.idlespiral.openspeedy.automation";
@@ -143,13 +143,10 @@ namespace IdleSpiralSpeedPatch
             foreach(var cost in costs)if(!(cost is Transaction))return true;
             var data=TheoryDataRef(__instance);
             if(data.level>FirstTheoryTransaction.Cap||!transaction.CanBuy())return false;
-            long count=(long)Math.Min(level*Math.Max(1,readFactor()),MaxTheoryBatch);
+            double limit=readFactor()>1?MaxTheoryBatch:Math.Min(level,MaxTheoryBatch);
             foreach(Transaction cost in costs)
-                if(cost.cost.Cost>0)
-                {
-                    double affordable=BigDouble.Floor(cost.resource.Number/cost.cost.Cost).ToDouble();
-                    if(affordable<count)count=(long)Math.Max(0,affordable);
-                }
+                if(cost.cost.Cost>0)limit=Math.Min(limit,BigDouble.Floor(cost.resource.Number/cost.cost.Cost).ToDouble());
+            long count=Math.Min((long)Math.Max(0,limit),long.MaxValue-data.level);
             while(count>0&&!CanPay(costs,count))count--;
             foreach(Transaction cost in costs)cost.resource.Decrement(cost.cost.Cost*count);
             if(count>0)theory.UpdateResourceInfo();

@@ -88,6 +88,8 @@ Daily 面板的「距離重置」倒數改為顯示目前遊戲日剩餘的遊�
 
 ## Theory 自動研究跟著倍率（AutomationGuard）
 
-Pythagorean theorem 的 Auto Study 每 1 真實秒（`WaitForSecondsRealtime`）呼叫一次 `FirstTheoryTransaction.LevelUpByLevel`，升 100×`TickManager.CurrentMultiplier` 級；時鐘隔離後就只剩每真實秒 100 級。原方法逐級迴圈（`CanBuy`／`Pay`／`UpdateResourceInfo`），實測每級約 7 µs，所以單純把上限調高（例如 1M）會讓那一幀卡住數秒。迴圈中等級要到最後才寫回，每一級都付起始等級的價格；AutomationGuard 改成一次算出 `min(要求級數, 各資源 floor(資源/單價))`，一次扣 `單價×級數`，結果與原迴圈相同，但成本固定。要求級數再乘上倍率，所以每遊戲秒 100 級；倍率 1× 時與原遊戲相同。若交易結構不是預期的 `MultipleTransaction`／`Transaction`，就退回原方法。
+Pythagorean theorem 的 Auto Study 每 1 真實秒（`WaitForSecondsRealtime`）呼叫一次 `FirstTheoryTransaction.LevelUpByLevel`，升 100×`TickManager.CurrentMultiplier` 級；時鐘隔離後就只剩每真實秒 100 級。原方法逐級迴圈（`CanBuy`／`Pay`／`UpdateResourceInfo`），實測每級約 7 µs，所以單純把上限調高（例如 1M）會讓那一幀卡住數秒。迴圈中等級要到最後才寫回，每一級都付起始等級的價格；AutomationGuard 改成一次算出 `min(要求級數, 各資源 floor(資源/單價))`，一次扣 `單價×級數`，結果與原迴圈相同，但成本固定。倍率高於 1× 時，每批只受資源限制（安全上限 1e15 級），能買幾級就買幾級；1× 時維持原遊戲的 100 級。若交易結構不是預期的 `MultipleTransaction`／`Transaction`，就退回原方法。
 
 實測（1000×）：每真實秒升 100,000 級，每次約 45 µs（原本 100 級約 690 µs）；四種資源的實際扣除量都等於單價×級數（只有約 1e-12 的浮點差）。資源不夠時，級數由可負擔數量決定。
+
+取消上限後的實測（1000×）：第一批從 29,394,714 升到 95,686,538 級（+66,291,824），花掉約 99.999% 的 Inspiration（1.94e19）；之後要等 Inspiration 收入累積到下一級的價格，才會再買。這時速度由 Inspiration 收入決定，不再由上限決定。代價：Pythagorean 每秒都會用掉當下能用的 Inspiration 和 Theory 材料。
